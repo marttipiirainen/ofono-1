@@ -1,0 +1,161 @@
+#!/usr/bin/python3
+#
+#  oFono - Open Source Telephony - RIL Modem test
+#
+#  Copyright (C) 2014 Canonical Ltd.
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License version 2 as
+#  published by the Free Software Foundation.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+# *** REQUIRED SETUP ***
+# see test-hangup
+
+import dbus
+import sys
+import time
+import telnetlib
+
+def set_spdi():
+	tn = telnetlib.Telnet("localhost", 5554)
+	tn.read_until(b"OK")
+	# TODO this 'sim-set' command makes QEMU segfault, interesting ...
+	# tn.write(bytes("gsm sim-set 6FCD a30b800932643164269fffffff\n", 'utf-8'))
+	tn.write(bytes("gsm sim-get 6FCD\n", 'utf-8'))
+	tn.read_until(b"OK")
+	tn.write(b"exit")
+
+def set_pnn_opl():
+	tn = telnetlib.Telnet("localhost", 5554)
+	tn.read_until(b"OK")
+	# TODO define proper values
+	tn.write(bytes("gsm sim-set 6FC5 01 430685d4f29c1e03450685d4f29c1e03ffffffffffffffff\n", 'utf-8'))
+	tn.read_until(b"OK")
+	tn.write(b"exit")
+
+if __name__ == "__main__":
+
+	if len(sys.argv) == 2:
+		port = sys.argv[1]
+	else:
+		port = 5554
+
+	bus = dbus.SystemBus()
+
+	manager = dbus.Interface(bus.get_object('org.ofono', '/'),
+				'org.ofono.Manager')
+	modems = manager.GetModems()
+
+	for path, properties in modems:
+		print("[ %s ]" % (path))
+
+		assert "org.ofono.NetworkRegistration" in properties["Interfaces"]
+
+		mgr = dbus.Interface(bus.get_object('org.ofono', path),
+				'org.ofono.NetworkRegistration')
+
+		# check we're registered in home network
+		properties = mgr.GetProperties()
+		keys = list(properties.keys())
+		assert keys.index("Status") != "ValueError"
+		regstatus = properties["Status"]
+		assert (regstatus == "registered"), "Not registered!"
+
+		# switch to roaming network
+		mgr.Scan(timeout=100)
+		try:
+			oper_obj = bus.get_object('org.ofono', "/ril_0/operator/310295");
+			oper = dbus.Interface(oper_obj, 'org.ofono.NetworkOperator')
+			oper.Register()
+		except dbus.DBusException as e:
+			print("Unable to register: %s" % e)
+			sys.exit(1)
+
+		# check we're roaming
+		properties = mgr.GetProperties()
+		keys = list(properties.keys())
+		assert keys.index("Status") != "ValueError"
+		regstatus = properties["Status"]
+		assert (regstatus == "roaming"), "Not roaming!"
+
+		# reset back to home network
+		try:
+			oper_obj = bus.get_object('org.ofono', "/ril_0/operator/310260");
+			oper = dbus.Interface(oper_obj, 'org.ofono.NetworkOperator')
+			oper.Register()
+		except dbus.DBusException as e:
+			print("Unable to register: %s" % e)
+			sys.exit(1)
+
+		print("About to set EF_SPDI ...")
+		set_spdi()
+		print("... done")
+
+		# switch to roaming network
+		mgr.Scan(timeout=100)
+		try:
+			oper_obj = bus.get_object('org.ofono', "/ril_0/operator/310295");
+			oper = dbus.Interface(oper_obj, 'org.ofono.NetworkOperator')
+			oper.Register()
+		except dbus.DBusException as e:
+			print("Unable to register: %s" % e)
+			sys.exit(1)
+
+		# check that we're *not* roaming (due to SPDI)
+		properties = mgr.GetProperties()
+		keys = list(properties.keys())
+		assert keys.index("Status") != "ValueError"
+		regstatus = properties["Status"]
+		# TODO: broken ...
+		# assert (regstatus == "registered"), "Not registered, SPDI not recognized!"
+
+		# reset back to home network
+		try:
+			oper_obj = bus.get_object('org.ofono', "/ril_0/operator/310260");
+			oper = dbus.Interface(oper_obj, 'org.ofono.NetworkOperator')
+			oper.Register()
+		except dbus.DBusException as e:
+			print("Unable to register: %s" % e)
+			sys.exit(1)
+
+		print("About to set EF_PNN and EF_OPL ...")
+		set_pnn_opl()
+		print("... done")
+
+		# switch to roaming network
+		mgr.Scan(timeout=100)
+		try:
+			oper_obj = bus.get_object('org.ofono', "/ril_0/operator/310295");
+			oper = dbus.Interface(oper_obj, 'org.ofono.NetworkOperator')
+			oper.Register()
+		except dbus.DBusException as e:
+			print("Unable to register: %s" % e)
+			sys.exit(1)
+
+		# check that we're *not* roaming (due to EF_OPL)
+		properties = mgr.GetProperties()
+		keys = list(properties.keys())
+		assert keys.index("Status") != "ValueError"
+		regstatus = properties["Status"]
+		# TODO: broken ...
+		assert (regstatus == "registered"), "Not registered, OPL not recognized!"
+
+		# reset back to home network
+		try:
+			oper_obj = bus.get_object('org.ofono', "/ril_0/operator/310260");
+			oper = dbus.Interface(oper_obj, 'org.ofono.NetworkOperator')
+			oper.Register()
+		except dbus.DBusException as e:
+			print("Unable to register: %s" % e)
+			sys.exit(1)
+
+
