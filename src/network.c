@@ -135,7 +135,7 @@ static int get_display_status(struct ofono_netreg *netreg, int status)
 	 */
 	if (status == NETWORK_REGISTRATION_STATUS_ROAMING && opd != NULL &&
 			(sim_spdi_lookup(netreg->spdi, opd->mcc, opd->mnc) ||
-			sim_eons_lookup(netreg->eons, opd->mcc, opd->mnc))) {
+			(netreg->eons && sim_eons_lookup(netreg->eons, opd->mcc, opd->mnc)))) {
 		DBG("mcc+mnc found in SPDI or OPL, roaming -> registered");
 		status = NETWORK_REGISTRATION_STATUS_REGISTERED;
 	}
