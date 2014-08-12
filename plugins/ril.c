@@ -395,6 +395,8 @@ static void ril_connected(struct ril_msg *message, gpointer user_data)
 	DBG("calling set_powered(TRUE)");
 
 	ofono_modem_set_powered(modem, TRUE);
+
+	send_get_sim_status(modem);
 }
 
 static int create_gril(struct ofono_modem *modem)
